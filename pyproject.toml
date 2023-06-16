@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ccget"
+authors = [
+  {name = "Russell Authur", email = "russell.authur@gmail.com"},
+]
+description = "Sample and archive Common Crawl data to S3"
+readme = "README.md"
+requires-python = ">=3.9"
+keywords = []
+license = {text = "AI2-Internal"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "boto3",
+    "requests",
+]
+dynamic = ["version"]
+
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}
+
+[tool.ruff]
+line-length = 88
+ignore = ["E741"]
+
+[project.scripts]
+ccget = "ccget:run_cli"
