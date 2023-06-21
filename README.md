@@ -55,6 +55,27 @@ If you do need to create a role (described above as to why this is unlikely to b
 }
 ```
 
+You will also need permission to pass any created role to S3 batch operations:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "iam:PassRole"
+            ],
+            "Resource": [
+                "arn:aws:iam::AWS_ACCOUNT_ID:role/ROLE_NAME"
+            ]
+        }
+    ]
+}
+```
+
+Replace AWS_ACCOUNT_ID and ROLE_NAME with appropriate values. You will also need permission for `s3:CreateJob`, however, it's likely that you are a power user and already have full access to S3.
+
 ## Test Role and Bucket
 
 A test bucket exists within the AllenNLP AWS account: `ai2-russella`. There is also a role with the appropriate permissions that can write and retore to this bucket: `S3BatchOpsRole_CCGET_Test`. Please use these things to test the scripts. But, it's important that a FULL archive is NOT run with the test setup for cost purposes.

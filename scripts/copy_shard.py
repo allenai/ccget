@@ -18,7 +18,6 @@ import string
 import tempfile
 from dataclasses import dataclass
 from enum import Enum
-from functools import cache
 from time import sleep
 
 import boto3
@@ -55,11 +54,11 @@ def _job_suffix() -> str:
 
 
 def _manifest_arn(s3_manifest_key: str, config: Config) -> str:
-    return f"arn:aws:s3::{account_id()}:{config.dest_bucket_name}/{s3_manifest_key}"
+    return f"arn:aws:s3:::{config.dest_bucket_name}/{s3_manifest_key}"
 
 
 def _bucket_arn(config: Config) -> str:
-    return f"arn:aws:s3::{account_id()}:{config.dest_bucket_name}"
+    return f"arn:aws:s3:::{config.dest_bucket_name}"
 
 
 def _object_etag(bucket: str, key: str) -> str:
@@ -129,22 +128,26 @@ def create_batch_job(s3_manifest_key: str, config: Config) -> str:
 
     response = s3control.create_job(
         AccountId=account_id(),
-        ConfirmationRequired=False,
+        ConfirmationRequired=True,
         Operation={
             "S3PutObjectCopy": {
                 "TargetResource": _bucket_arn(config),
+                "MetadataDirective": "REPLACE",
+                "NewObjectMetadata": {"RequesterCharged": False},
+                "NewObjectTagging": [],
                 "CannedAccessControlList": "private",
                 "StorageClass": config.storage_class.name,
+                "RequesterPays": False,
+                "BucketKeyEnabled": False,
             }
         },
         Report={
-            "Bucket": config.dest_bucket_name,
+            "Bucket": _bucket_arn(config),
             "Format": "Report_CSV_20180820",
             "Enabled": True,
             "Prefix": config.reports_prefix,
-            "ReportScope": "FailedTasks",
+            "ReportScope": "AllTasks",
         },
-        ClientRequestToken=s3_manifest_key,
         Manifest={
             "Spec": {
                 "Format": "S3BatchOperations_CSV_20180820",
@@ -155,7 +158,7 @@ def create_batch_job(s3_manifest_key: str, config: Config) -> str:
                 "ETag": _object_etag(config.dest_bucket_name, s3_manifest_key),
             },
         },
-        Priority=1,  # Higher is more urgent
+        Priority=10,  # Higher is more urgent
         RoleArn=config.role_arn,
     )
 
@@ -171,7 +174,7 @@ def poll_job_status(s3control, job_id: str) -> bool:
     succeeded = summary["NumberOfTasksSucceeded"]
     failed = summary["NumberOfTasksFailed"]
     total = summary["TotalNumberOfTasks"]
-    progress = ((succeeded + failed) / total) * 100
+    progress = 0 if total == 0 else ((succeeded + failed) / total) * 100
     status = response["Job"]["Status"]
 
     print(
@@ -184,6 +187,8 @@ def poll_job_status(s3control, job_id: str) -> bool:
 
 
 def main(config: Config):
+    print(config)
+
     with gzip.open(warc_paths_local_fn(config.shard_id, config.cache_dir)) as f:
         keys = [k for k in f.read().decode("utf-8").splitlines()]
 
