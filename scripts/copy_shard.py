@@ -23,7 +23,7 @@ from time import sleep
 
 import boto3
 
-from ccget.consts import AWS_REGION, CC_BUCKET
+from ccget.consts import AWS_REGION, CC_BUCKET, account_id
 from ccget.paths import warc_paths_local_fn
 from ccget.shards import list_shards
 
@@ -46,6 +46,7 @@ class Config:
     dest_bucket_name: str
     manifest_prefix: str
     reports_prefix: str
+    role_arn: str
     storage_class: S3StorageClass
 
 
@@ -54,23 +55,31 @@ def _job_suffix() -> str:
 
 
 def _manifest_arn(s3_manifest_key: str, config: Config) -> str:
-    return f"arn:aws:s3:::{config.dest_bucket_name}/{s3_manifest_key}"
+    return f"arn:aws:s3::{account_id()}:{config.dest_bucket_name}/{s3_manifest_key}"
 
 
 def _bucket_arn(config: Config) -> str:
-    return f"arn:aws:s3:::{config.dest_bucket_name}"
+    return f"arn:aws:s3::{account_id()}:{config.dest_bucket_name}"
 
 
 def _object_etag(bucket: str, key: str) -> str:
     s3 = boto3.client("s3")
-    s3.head_object(Bucket=bucket, Key=key)["ETag"]
+    return s3.head_object(Bucket=bucket, Key=key)["ETag"]
+
+
+def _get_role_arn(role_name: str) -> str:
+    iam = boto3.client("iam")
+    res = iam.get_role(RoleName=role_name)
+
+    return res["Role"]["Arn"]
 
 
 def _verify_bucket_region(bucket: str) -> None:
     s3 = boto3.client("s3")
     res = s3.get_bucket_location(Bucket=bucket)
 
-    if res["LocationConstraint"] != AWS_REGION:
+    # us-east-1 is None for LocationConstraint!!!
+    if res["LocationConstraint"] is not None:
         raise RuntimeError(
             "To avoid cross-region data transfer destination bucket must be in "
             f"{AWS_REGION}! Found {res['LocationConstraint']}"
@@ -97,12 +106,6 @@ def _verify_shard(shard: str):
         raise RuntimeError(f"Unknown shard: {shard}")
 
 
-@cache
-def _account_id() -> str:
-    client = boto3.client("sts")
-    return client.get_caller_identity()["Account"]
-
-
 def create_job_manifest_on_s3(keys: list[str], config: Config) -> str:
     s3 = boto3.client("s3", region_name=AWS_REGION)
 
@@ -125,35 +128,35 @@ def create_batch_job(s3_manifest_key: str, config: Config) -> str:
     s3control = boto3.client("s3control", region_name=AWS_REGION)
 
     response = s3control.create_job(
-        AccountId=_account_id(),
+        AccountId=account_id(),
         ConfirmationRequired=False,
         Operation={
-            "S3PutObjectCopoy": {
+            "S3PutObjectCopy": {
                 "TargetResource": _bucket_arn(config),
                 "CannedAccessControlList": "private",
                 "StorageClass": config.storage_class.name,
-            },
-            "Report": {
-                "Bucket": config.dest_bucket_name,
-                "Format": "Report_CSV_20180820",
-                "Enabled": True,
-                "Prefix": config.reports_prefix,
-                "ReportScope": "FailedTasks",
-            },
-            "ClientRequestToken": s3_manifest_key,
-            "Manifest": {
-                "Spec": {
-                    "Format": "S3BatchOperations_CSV_20180820",
-                    "Fields": ["Bucket", "Key"],
-                },
-                "Location": {
-                    "ObjectArn": _manifest_arn(s3_manifest_key),
-                    "ETag": _object_etag(config.dest_bucket_name, s3_manifest_key),
-                },
-            },
-            "Priority": 1,  # Higher is more urgent
-            "RoleArn": ...,  # FIXME
+            }
         },
+        Report={
+            "Bucket": config.dest_bucket_name,
+            "Format": "Report_CSV_20180820",
+            "Enabled": True,
+            "Prefix": config.reports_prefix,
+            "ReportScope": "FailedTasks",
+        },
+        ClientRequestToken=s3_manifest_key,
+        Manifest={
+            "Spec": {
+                "Format": "S3BatchOperations_CSV_20180820",
+                "Fields": ["Bucket", "Key"],
+            },
+            "Location": {
+                "ObjectArn": _manifest_arn(s3_manifest_key, config),
+                "ETag": _object_etag(config.dest_bucket_name, s3_manifest_key),
+            },
+        },
+        Priority=1,  # Higher is more urgent
+        RoleArn=config.role_arn,
     )
 
     print("Created Batch Copy JobId: ", response["JobId"])
@@ -161,10 +164,8 @@ def create_batch_job(s3_manifest_key: str, config: Config) -> str:
     return response["JobId"]
 
 
-def poll_job_status(job_id: str, config: Config) -> bool:
-    s3control = boto3.client("s3control", region_name=AWS_REGION)
-
-    response = s3control.describe_job(AccountId=_account_id(), JobId=job_id)
+def poll_job_status(s3control, job_id: str) -> bool:
+    response = s3control.describe_job(AccountId=account_id(), JobId=job_id)
 
     summary = response["Job"]["ProgressSummary"]
     succeeded = summary["NumberOfTasksSucceeded"]
@@ -187,14 +188,19 @@ def main(config: Config):
         keys = [k for k in f.read().decode("utf-8").splitlines()]
 
     if config.n > 0:
-        random.seed(102)
-        keys = random.sample(keys, config.n)
+        # Here we will set a seed that is not shared with other RNG states to allow the
+        # job suffix to be different while the sampled files are the same
+        rng = random.Random(102)
+        keys = rng.sample(keys, config.n)
 
     s3_manifest_key = create_job_manifest_on_s3(keys, config)
+    print(f"Created manifest: s3://{config.dest_bucket_name}/{s3_manifest_key}")
+
     job_id = create_batch_job(s3_manifest_key, config)
 
     print("Polling job status (safe to CTRL-C/KILL this process now)...")
-    while not poll_job_status(job_id, config):
+    s3control = boto3.client("s3control", region_name=AWS_REGION)
+    while not poll_job_status(s3control, job_id):
         sleep(30)
 
 
@@ -243,10 +249,10 @@ if __name__ == "__main__":
         help="Key prefix in destination bucket for batch job report files",
     )
     parser.add_argument(
-        "--role-arn",
+        "--role-name",
         type=str,
         required=True,
-        help="Role ARN for the batch job execution role",
+        help="Role name for the batch job execution role",
     )
     parser.add_argument(
         "--storage-class",
@@ -268,6 +274,8 @@ if __name__ == "__main__":
         cache_dir=args.cache_dir,
         dest_bucket_name=args.bucket,
         manifest_prefix=args.manifest_prefix,
+        reports_prefix=args.reports_prefix,
+        role_arn=_get_role_arn(args.role_name),
         storage_class=S3StorageClass[args.storage_class],
     )
 

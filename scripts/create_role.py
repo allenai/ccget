@@ -19,6 +19,8 @@ from dataclasses import dataclass
 import boto3
 from botocore.exceptions import ClientError
 
+from ccget.consts import CC_BUCKET, account_id
+
 _ASSUME_ROLE = json.dumps(
     {
         "Version": "2012-10-17",
@@ -32,7 +34,7 @@ _ASSUME_ROLE = json.dumps(
     }
 )
 
-_PUT_OBJECTS_ROLE_NAME = "S3BatchOpsPutObjects_CCGET"
+_PUT_OBJECTS_ROLE_NAME = "S3BatchOpsPutObjects_CCGET2"
 _RESTORE_OBJECTS_ROLE_NAME = "S3BatchOpsRestoreObjects_CCGET"
 
 
@@ -42,10 +44,14 @@ def _put_objects_policy_document(dest_bucket_name: str) -> dict:
             "Version": "2012-10-17",
             "Statement": [
                 {
+                    # These cover archiving, reading manifest and writing report
                     "Action": [
                         "s3:PutObject",
                         "s3:PutObjectAcl",
                         "s3:PutObjectTagging",
+                        "s3:GetObject",
+                        "s3:GetObjectVersion",
+                        "s3:GetBucketLocation",
                     ],
                     "Effect": "Allow",
                     "Resource": f"arn:aws:s3:::{dest_bucket_name}/*",
@@ -53,12 +59,7 @@ def _put_objects_policy_document(dest_bucket_name: str) -> dict:
                 {
                     "Effect": "Allow",
                     "Action": ["s3:GetObject"],
-                    "Resource": [f"arn:aws:s3:::{dest_bucket_name}/*"],
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": ["s3:PutObject"],
-                    "Resource": [f"arn:aws:s3:::{dest_bucket_name}/*"],
+                    "Resource": [f"arn:aws:s3:::{CC_BUCKET}/*"],
                 },
             ],
         }
@@ -96,8 +97,8 @@ class Config:
     dest_bucket_name: str
 
 
-def _policy_arn(role_name: str) -> str:
-    return f"arn:aws:iam::aws:policy/{role_name}"
+def _policy_arn(policy_name: str) -> str:
+    return f"arn:aws:iam::{account_id()}:policy/{policy_name}"
 
 
 def _create_managed_policy(iam, policy_name: str, policy_details: any) -> dict:

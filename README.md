@@ -32,3 +32,29 @@ aws s3api create-bucket --acl private --bucket ai2-russella --object-ownership B
 ```
 
 Location constraint is not specified as the default is `us-east-1` which is the same region as the Common Crawl data.
+
+## AWS Permissions
+
+If you do need to create a role (described above as to why this is unlikely to be the case) then your IAM user will need permission to create roles and policies. Here is an example, generic policy:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "iam:AttachRolePolicy",
+                "iam:CreateRole",
+                "iam:CreatePolicy",
+                "iam:PutRolePolicy"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
+
+## Test Role and Bucket
+
+A test bucket exists within the AllenNLP AWS account: `ai2-russella`. There is also a role with the appropriate permissions that can write and retore to this bucket: `S3BatchOpsRole_CCGET_Test`. Please use these things to test the scripts. But, it's important that a FULL archive is NOT run with the test setup for cost purposes.

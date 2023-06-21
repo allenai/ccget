@@ -3,6 +3,7 @@ Work with specific CC shard files for replication and fetching.
 
 @rauthur
 """
+import json
 import logging
 import os
 from dataclasses import dataclass
@@ -22,9 +23,13 @@ class ShardInfo:
     name: str
 
 
-def list_shards() -> list[ShardInfo]:
-    res = requests.get(_URL)
-    shards = res.json()
+def list_shards(use_cache=True) -> list[ShardInfo]:
+    if use_cache:
+        with open(os.path.join("resources", "shards.json")) as f:
+            shards = json.loads(f.read())
+    else:
+        res = requests.get(_URL)
+        shards = res.json()
 
     return [ShardInfo(id=s["id"], name=s["name"]) for s in shards]
 
