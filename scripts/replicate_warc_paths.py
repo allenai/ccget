@@ -12,7 +12,7 @@ from typing import Optional
 
 import boto3
 
-from ccget.shards import fetch_warc_paths, replicate_warc_paths
+from ccget.shards import fetch_warc_paths, list_shards, replicate_warc_paths
 
 
 @dataclass
@@ -56,9 +56,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "-s",
         "--shards",
-        required=True,
+        required=False,
         nargs="+",
-        help="List of shards to replicate",
+        help="List of shards to replicate (default is ALL)",
     )
     parser.add_argument(
         "-c",
@@ -80,8 +80,13 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    shard_ids = args.shards
+
+    if not shard_ids:
+        shard_ids = [s.id for s in list_shards()]
+
     config = Config(
-        shard_ids=args.shards,
+        shard_ids=shard_ids,
         cache_dir=args.cache_dir,
         ignore_cache=args.ignore_cache,
         dest_bucket=args.bucket,

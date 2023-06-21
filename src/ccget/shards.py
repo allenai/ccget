@@ -29,12 +29,23 @@ def list_shards() -> list[ShardInfo]:
     return [ShardInfo(id=s["id"], name=s["name"]) for s in shards]
 
 
-def warc_is_replicated(s3, shard_id: str, dest_bucket_name: str) -> bool:
+def warc_paths_is_replicated(
+    s3,
+    shard_id: str,
+    dest_bucket_name: str,
+    max_bytes: int = 1_000_000,
+) -> bool:
     client = s3.meta.client
 
     try:
         key = warc_paths_s3_key(shard_id)
-        client.head_object(Bucket=dest_bucket_name, Key=key)
+        res = client.head_object(Bucket=dest_bucket_name, Key=key)
+
+        # Ensure body size not too large
+        size = res["ContentLength"]
+
+        if size > max_bytes:
+            raise RuntimeError(f"Unexpectedly large warc.paths.gz: {shard_id}: {size}")
 
         return True
     except botocore.exceptions.ClientError as ex:
@@ -59,7 +70,7 @@ def replicate_warc_paths(
         dest_bucket_name (str): Where to store the warc.paths.gz file
         ignore_cache (bool): If True then always replication. Defaults to False.
     """
-    if not ignore_cache and warc_is_replicated(s3, shard_id, dest_bucket_name):
+    if not ignore_cache and warc_paths_is_replicated(s3, shard_id, dest_bucket_name):
         print(f"Skipping S3 -> S3 replication for {shard_id}")
         return
 
@@ -68,7 +79,13 @@ def replicate_warc_paths(
 
     source_config = {"Bucket": CC_BUCKET, "Key": obj_key}
 
-    dest_bucket.copy(source_config, obj_key)
+    try:
+        dest_bucket.copy(source_config, obj_key)
+    except botocore.exceptions.ClientError as ex:
+        if ex.response["Error"]["Code"] == "404":
+            logging.warning(f"[replicate] warc.paths.gz not found for {shard_id}!")
+        else:
+            raise ex
 
 
 def fetch_warc_paths(
@@ -103,5 +120,11 @@ def fetch_warc_paths(
 
     os.makedirs(os.path.dirname(out_fn), exist_ok=True)
 
-    bucket = s3.Bucket(bucket_name)
-    bucket.download_file(warc_paths_s3_key(shard_id), out_fn)
+    try:
+        bucket = s3.Bucket(bucket_name)
+        bucket.download_file(warc_paths_s3_key(shard_id), out_fn)
+    except botocore.exceptions.ClientError as ex:
+        if ex.response["Error"]["Code"] == "404":
+            logging.warning(f"[fetch] warc.paths.gz not found for {shard_id}!")
+        else:
+            raise ex
