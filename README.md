@@ -47,6 +47,8 @@ The cost to store a SINGLE shard of Common Crawl in S3's Glacier Deep Archive is
 
 Thus, to store 25 shards for a year and access them once will cost around $40,000.
 
+### Cost estimate to run restoration
+
 Issuing a restoration job using `scripts/restore_shard.py` will print an estimate of the cost to both restore the shard files (or the selected subset) and the cost to store the data on S3 standard for the specified number of days. For example:
 
 ```bash
