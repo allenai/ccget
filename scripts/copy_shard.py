@@ -24,7 +24,7 @@ from ccget.aws import (
     manifest_arn,
     object_etag,
 )
-from ccget.consts import AWS_REGION, account_id
+from ccget.consts import AWS_REGION, CC_BUCKET, account_id
 from ccget.paths import warc_paths_local_fn
 from ccget.shards import list_shards
 
@@ -130,6 +130,7 @@ def main(config: Config):
     s3_manifest_key = create_job_manifest_on_s3(
         keys,
         config.manifest_prefix,
+        CC_BUCKET,
         config.dest_bucket_name,
     )
     print(f"Created manifest: s3://{config.dest_bucket_name}/{s3_manifest_key}")

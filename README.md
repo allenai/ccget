@@ -35,6 +35,34 @@ commoncrawl,crawl-data/CC-MAIN-2015-40/segments/1443737958671.93/warc/CC-MAIN-20
 
 This example reports (in many ways) that the specific objects were successfully copied as part of the job. The Job itself specifies the destination bucket (`ai2-russella` in this case) whereas the report shows the source bucket (`commoncrawl`). So, the object key above combined with the destination bucket can be used to retrive or restore (in the case of deep archive) the object.
 
+## Checking the status of an object restoration with the AWS CLI
+
+It can take up to 48 hours to copy an object from deep archive to standard S3 since we use Bulk restoration. To check the status of a single object use the AWS CLI:
+
+```bash
+aws s3api head-object \
+  --bucket ai2-russella \
+  --key crawl-data/CC-MAIN-2015-40/segments/1443737940789.96/warc/CC-MAIN-20151001221900-00179-ip-10-137-6-227.ec2.internal.warc.gz
+```
+
+In the result the value of `Restore` has `ongoing-request` as `true`. This means that S3 is actively restoring this object to standard S3 from deep archive.
+
+```json
+{
+    "AcceptRanges": "bytes",
+    "Restore": "ongoing-request=\"true\"",
+    "LastModified": "2023-06-23T15:49:29+00:00",
+    "ContentLength": 1251691932,
+    "ETag": "\"8e41f4fc8a1ce371a2b6fab35f56eb42\"",
+    "ContentType": "application/octet-stream",
+    "ServerSideEncryption": "AES256",
+    "Metadata": {},
+    "StorageClass": "DEEP_ARCHIVE"
+}
+```
+
+When the restore is completed you can use the same command to see the expiration timestamp. A `expiry-date` value will be added to the `Restore` JSON key when the restoration is complete. At that point the object can be accessed like a normal S3 object until it expires.
+
 ## Illustration of archive process
 
 TODO

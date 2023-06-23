@@ -7,7 +7,7 @@ from enum import Enum
 
 import boto3
 
-from ccget.consts import AWS_REGION, CC_BUCKET
+from ccget.consts import AWS_REGION
 
 
 class S3StorageClass(Enum):
@@ -47,6 +47,7 @@ def get_role_arn(role_name: str) -> str:
 def create_job_manifest_on_s3(
     keys: list[str],
     manifest_prefix: str,
+    source_bucket_name: str,
     dest_bucket_name: str,
 ) -> str:
     s3 = boto3.client("s3", region_name=AWS_REGION)
@@ -59,7 +60,9 @@ def create_job_manifest_on_s3(
 
         with open(manifest_fullpath, "w", encoding="utf-8", newline="") as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=["bucket", "key"])
-            writer.writerows([{"bucket": CC_BUCKET, "key": key} for key in keys])
+            writer.writerows(
+                [{"bucket": source_bucket_name, "key": key} for key in keys]
+            )
 
         s3.upload_file(manifest_fullpath, dest_bucket_name, s3_manifest_key)
 

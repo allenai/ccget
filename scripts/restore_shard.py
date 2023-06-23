@@ -22,11 +22,12 @@ from ccget.aws import (
 )
 from ccget.consts import AWS_REGION, account_id
 from ccget.paths import warc_paths_local_fn
+from ccget.shards import list_shards
 
 
 @dataclass
 class Config:
-    shard_id: str
+    shard_id: Optional[str]
     n: int
     cache_dir: str
     dest_bucket_name: str
@@ -89,6 +90,21 @@ def _restore_estimate(num_keys: int, config: Config):
     return num_1k_requests * 0.000025 + num_keys * 0.0025 + s3_storage_cost
 
 
+def _verify_shard_or_manifest_file(shard: str, manifest_file: str):
+    if shard is not None and manifest_file is not None:
+        raise RuntimeError("Specify either shard OR manifest file")
+
+
+def _verify_shard(shard: str):
+    if shard is None:
+        return
+
+    all_shards = set([s.id for s in list_shards()])
+
+    if shard not in all_shards:
+        raise RuntimeError(f"Unknown shard: {shard}")
+
+
 def main(config: Config):
     if config.manifest_file:
         with open(config.manifest_file, newline="") as c:
@@ -111,11 +127,11 @@ def main(config: Config):
         keys,
         config.manifest_prefix,
         config.dest_bucket_name,
+        config.dest_bucket_name,
     )
     print(f"Created manifest: s3://{config.dest_bucket_name}/{s3_manifest_key}")
 
-    job_id = _create_batch_job(s3_manifest_key, config)
-    print(f"Job ID: {job_id}")
+    _create_batch_job(s3_manifest_key, config)
     print("Please confirm and start the job from the AWS S3 console")
 
 
@@ -125,7 +141,7 @@ if __name__ == "__main__":
         "-s",
         "--shard",
         type=str,
-        required=True,
+        required=False,
         help="The shard to restore",
     )
     parser.add_argument(
@@ -185,6 +201,9 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+
+    _verify_shard_or_manifest_file(args.shard, args.manifest_file)
+    _verify_shard(args.shard)
 
     config = Config(
         shard_id=args.shard,
