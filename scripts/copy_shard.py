@@ -13,7 +13,6 @@ import argparse
 import gzip
 import random
 from dataclasses import dataclass
-from time import sleep
 
 import boto3
 
@@ -74,7 +73,7 @@ def _verify_shard(shard: str):
         raise RuntimeError(f"Unknown shard: {shard}")
 
 
-def create_batch_job(s3_manifest_key: str, config: Config) -> str:
+def _create_batch_job(s3_manifest_key: str, config: Config) -> str:
     s3control = boto3.client("s3control", region_name=AWS_REGION)
 
     response = s3control.create_job(
@@ -118,28 +117,7 @@ def create_batch_job(s3_manifest_key: str, config: Config) -> str:
     return response["JobId"]
 
 
-def poll_job_status(s3control, job_id: str) -> bool:
-    response = s3control.describe_job(AccountId=account_id(), JobId=job_id)
-
-    summary = response["Job"]["ProgressSummary"]
-    succeeded = summary["NumberOfTasksSucceeded"]
-    failed = summary["NumberOfTasksFailed"]
-    total = summary["TotalNumberOfTasks"]
-    progress = 0 if total == 0 else ((succeeded + failed) / total) * 100
-    status = response["Job"]["Status"]
-
-    print(
-        f"Total: {total}; Succeeded: {succeeded}; "
-        f"Failed: {failed}; Progress%: {progress:.2f} "
-        f"Status: {status}"
-    )
-
-    return status != "Active"
-
-
 def main(config: Config):
-    print(config)
-
     with gzip.open(warc_paths_local_fn(config.shard_id, config.cache_dir)) as f:
         keys = [k for k in f.read().decode("utf-8").splitlines()]
 
@@ -149,15 +127,15 @@ def main(config: Config):
         rng = random.Random(102)
         keys = rng.sample(keys, config.n)
 
-    s3_manifest_key = create_job_manifest_on_s3(keys, config)
+    s3_manifest_key = create_job_manifest_on_s3(
+        keys,
+        config.manifest_prefix,
+        config.dest_bucket_name,
+    )
     print(f"Created manifest: s3://{config.dest_bucket_name}/{s3_manifest_key}")
 
-    job_id = create_batch_job(s3_manifest_key, config)
-
-    print("Polling job status (safe to CTRL-C/KILL this process now)...")
-    s3control = boto3.client("s3control", region_name=AWS_REGION)
-    while not poll_job_status(s3control, job_id):
-        sleep(30)
+    _create_batch_job(s3_manifest_key, config)
+    print("Please confirm and start the job from the AWS S3 console")
 
 
 if __name__ == "__main__":
