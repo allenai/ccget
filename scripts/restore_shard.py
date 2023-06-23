@@ -4,10 +4,12 @@ Restore a shard to active S3 storage (standard tier) for a fixed number of days.
 @rauthur
 """
 import argparse
+import csv
 import gzip
 import random
 from dataclasses import dataclass
 from math import ceil
+from typing import Optional
 
 import boto3
 
@@ -29,6 +31,7 @@ class Config:
     cache_dir: str
     dest_bucket_name: str
     manifest_prefix: str
+    manifest_file: Optional[str]
     reports_prefix: str
     restore_days: int
     role_arn: str
@@ -87,10 +90,15 @@ def _restore_estimate(num_keys: int, config: Config):
 
 
 def main(config: Config):
-    with gzip.open(warc_paths_local_fn(config.shard_id, config.cache_dir)) as f:
-        keys = [k for k in f.read().decode("utf-8").splitlines()]
+    if config.manifest_file:
+        with open(config.manifest_file, newline="") as c:
+            reader = csv.reader(c)
+            keys = [r[1] for r in reader]
+    else:
+        with gzip.open(warc_paths_local_fn(config.shard_id, config.cache_dir)) as f:
+            keys = [k for k in f.read().decode("utf-8").splitlines()]
 
-    if config.n > 0:
+    if config.n > 0 and config.n < len(keys):
         # Here we will set a seed that is not shared with other RNG states to allow the
         # job suffix to be different while the sampled files are the same
         rng = random.Random(102)
@@ -118,13 +126,13 @@ if __name__ == "__main__":
         "--shard",
         type=str,
         required=True,
-        help="The shard to archive",
+        help="The shard to restore",
     )
     parser.add_argument(
         "-n",
         type=int,
         required=True,
-        help="Number of ~1GB WARC files to archive (0 for all). Randomly sampled.",
+        help="Number of ~1GB WARC files to restore (0 for all). Randomly sampled.",
     )
     parser.add_argument(
         "-c",
@@ -146,6 +154,13 @@ if __name__ == "__main__":
         required=False,
         default="batch-restore-manifests",
         help="Key prefix in destination bucket for batch job manifest files",
+    )
+    parser.add_argument(
+        "-o",
+        "--manifest-file",
+        type=str,
+        required=False,
+        help="Use a local manifest file instead of generating one",
     )
     parser.add_argument(
         "-r",
@@ -177,6 +192,7 @@ if __name__ == "__main__":
         cache_dir=args.cache_dir,
         dest_bucket_name=args.bucket,
         manifest_prefix=args.manifest_prefix,
+        manifest_file=args.manifest_file,
         reports_prefix=args.reports_prefix,
         restore_days=args.restore_days,
         role_arn=get_role_arn(args.role_name),
