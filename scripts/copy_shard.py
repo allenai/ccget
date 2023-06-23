@@ -10,31 +10,24 @@ secondary bucket to copy files locally as needed.
 @rauthur
 """
 import argparse
-import csv
 import gzip
-import os
 import random
-import string
-import tempfile
 from dataclasses import dataclass
-from enum import Enum
 from time import sleep
 
 import boto3
 
-from ccget.consts import AWS_REGION, CC_BUCKET, account_id
+from ccget.aws import (
+    S3StorageClass,
+    bucket_arn,
+    create_job_manifest_on_s3,
+    get_role_arn,
+    manifest_arn,
+    object_etag,
+)
+from ccget.consts import AWS_REGION, account_id
 from ccget.paths import warc_paths_local_fn
 from ccget.shards import list_shards
-
-
-class S3StorageClass(Enum):
-    STANDARD = 1
-    STANDARD_IA = 2
-    ONEZONE_IA = 3
-    GLACIER = 4
-    INTELLIGENT_TIERING = 5
-    DEEP_ARCHIVE = 6
-    GLACIER_IR = 7
 
 
 @dataclass
@@ -47,30 +40,6 @@ class Config:
     reports_prefix: str
     role_arn: str
     storage_class: S3StorageClass
-
-
-def _job_suffix() -> str:
-    return "".join(random.choices(string.ascii_lowercase, k=8))
-
-
-def _manifest_arn(s3_manifest_key: str, config: Config) -> str:
-    return f"arn:aws:s3:::{config.dest_bucket_name}/{s3_manifest_key}"
-
-
-def _bucket_arn(config: Config) -> str:
-    return f"arn:aws:s3:::{config.dest_bucket_name}"
-
-
-def _object_etag(bucket: str, key: str) -> str:
-    s3 = boto3.client("s3")
-    return s3.head_object(Bucket=bucket, Key=key)["ETag"]
-
-
-def _get_role_arn(role_name: str) -> str:
-    iam = boto3.client("iam")
-    res = iam.get_role(RoleName=role_name)
-
-    return res["Role"]["Arn"]
 
 
 def _verify_bucket_region(bucket: str) -> None:
@@ -105,24 +74,6 @@ def _verify_shard(shard: str):
         raise RuntimeError(f"Unknown shard: {shard}")
 
 
-def create_job_manifest_on_s3(keys: list[str], config: Config) -> str:
-    s3 = boto3.client("s3", region_name=AWS_REGION)
-
-    # We'll write the S3 expected format manifest file here
-    with tempfile.TemporaryDirectory() as tmpdir:
-        manifest_fn = f"manifest-{_job_suffix()}.csv"
-        s3_manifest_key = f"{config.manifest_prefix}/{manifest_fn}"
-        manifest_fullpath = os.path.join(tmpdir, manifest_fn)
-
-        with open(manifest_fullpath, "w", encoding="utf-8", newline="") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=["bucket", "key"])
-            writer.writerows([{"bucket": CC_BUCKET, "key": key} for key in keys])
-
-        s3.upload_file(manifest_fullpath, config.dest_bucket_name, s3_manifest_key)
-
-        return s3_manifest_key
-
-
 def create_batch_job(s3_manifest_key: str, config: Config) -> str:
     s3control = boto3.client("s3control", region_name=AWS_REGION)
 
@@ -131,7 +82,7 @@ def create_batch_job(s3_manifest_key: str, config: Config) -> str:
         ConfirmationRequired=True,
         Operation={
             "S3PutObjectCopy": {
-                "TargetResource": _bucket_arn(config),
+                "TargetResource": bucket_arn(config.dest_bucket_name),
                 "MetadataDirective": "REPLACE",
                 "NewObjectMetadata": {"RequesterCharged": False},
                 "NewObjectTagging": [],
@@ -142,7 +93,7 @@ def create_batch_job(s3_manifest_key: str, config: Config) -> str:
             }
         },
         Report={
-            "Bucket": _bucket_arn(config),
+            "Bucket": bucket_arn(config.dest_bucket_name),
             "Format": "Report_CSV_20180820",
             "Enabled": True,
             "Prefix": config.reports_prefix,
@@ -154,8 +105,8 @@ def create_batch_job(s3_manifest_key: str, config: Config) -> str:
                 "Fields": ["Bucket", "Key"],
             },
             "Location": {
-                "ObjectArn": _manifest_arn(s3_manifest_key, config),
-                "ETag": _object_etag(config.dest_bucket_name, s3_manifest_key),
+                "ObjectArn": manifest_arn(s3_manifest_key, config.dest_bucket_name),
+                "ETag": object_etag(config.dest_bucket_name, s3_manifest_key),
             },
         },
         Priority=10,  # Higher is more urgent
@@ -280,7 +231,7 @@ if __name__ == "__main__":
         dest_bucket_name=args.bucket,
         manifest_prefix=args.manifest_prefix,
         reports_prefix=args.reports_prefix,
-        role_arn=_get_role_arn(args.role_name),
+        role_arn=get_role_arn(args.role_name),
         storage_class=S3StorageClass[args.storage_class],
     )
 

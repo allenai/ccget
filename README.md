@@ -13,9 +13,24 @@ This repository contains scripts to archive Common Crawl data on S3 to a bucket 
 
 TODO
 
-## Cost estimation for using Deep Archive
+## Cost estimation for using Deep Archive to store data
 
-TODO
+The cost to store a SINGLE shard of Common Crawl in S3's Glacier Deep Archive is $126.94 / month or $1528.40 / year. This includes ONE restoration to active S3 with transfer costs (but not any on-going S3 storage costs associated). The breakdown is as follows:
+
+<img src="docs/images/deep-archive-storage-estimate.png" width="800" />
+
+Thus, to store 25 shards for a year and access them once will cost around $40,000.
+
+Issuing a restoration job using `scripts/restore_shard.py` will print an estimate of the cost to both restore the shard files (or the selected subset) and the cost to store the data on S3 standard for the specified number of days. For example:
+
+```bash
+python ./scripts/restore_shard.py -s CC-MAIN-2015-40 -n 0 -c ./tmp/cache -b ai2-russella -d 7 --role-name S3BatchOpsRole_CCGET_Test
+
+This restore job is estimated to cost $181.59
+...
+```
+
+If you don't access your restored files within the specified number of days (`-d` param) then you'll have to pay the restoration fee again! Also, the 7 day window doesn't start until files are restored which can be around 48 hours after starting the restoration job.
 
 ## Download the latest collinfo.json
 
@@ -79,3 +94,9 @@ Replace AWS_ACCOUNT_ID and ROLE_NAME with appropriate values. You will also need
 ## Test Role and Bucket
 
 A test bucket exists within the AllenNLP AWS account: `ai2-russella`. There is also a role with the appropriate permissions that can write and retore to this bucket: `S3BatchOpsRole_CCGET_Test`. Please use these things to test the scripts. But, it's important that a FULL archive is NOT run with the test setup for cost purposes.
+
+## Restore objects to normal S3 PERMANENTLY
+
+Hopefully you never need to do this! If you do, please make sure that you understand that the cost of storage of petabytes of data on S3 standard is significant. For more information on how to retore and object from Glacier Deep Archive permanently see this [Stack Overflow thread](https://stackoverflow.com/questions/51670231/how-do-i-restore-from-aws-glacier-back-to-s3-permanently).
+
+Relevant to this project, you will use the `restore_shard.py` script to restore the files you want to unarchive permanently then follow the steps in the thread above to make an in-place copy with a new storage class.
