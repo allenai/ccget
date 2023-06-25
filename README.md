@@ -63,6 +63,22 @@ In the result the value of `Restore` has `ongoing-request` as `true`. This means
 
 When the restore is completed you can use the same command to see the expiration timestamp. A `expiry-date` value will be added to the `Restore` JSON key when the restoration is complete. At that point the object can be accessed like a normal S3 object until it expires.
 
+```json
+{
+    "AcceptRanges": "bytes",
+    "Restore": "ongoing-request=\"false\", expiry-date=\"Mon, 03 Jul 2023 00:00:00 GMT\"",
+    "LastModified": "2023-06-23T15:49:29+00:00",
+    "ContentLength": 1251691932,
+    "ETag": "\"8e41f4fc8a1ce371a2b6fab35f56eb42\"",
+    "ContentType": "application/octet-stream",
+    "ServerSideEncryption": "AES256",
+    "Metadata": {},
+    "StorageClass": "DEEP_ARCHIVE"
+}
+```
+
+Above, you can see the storage class is still `DEEP_ARCHIVE`, however, the presence of the expiry date indicates the object is available for download.
+
 ## Illustration of archive process
 
 TODO
