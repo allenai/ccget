@@ -81,6 +81,8 @@ Above, you can see the storage class is still `DEEP_ARCHIVE`, however, the prese
 
 ## Illustration of archive process
 
+This diagram was created with the free `drawio-desktop` app [available on GitHub](https://github.com/jgraph/drawio-desktop/releases). Source for the diagram is in the `docs` folder.
+
 <img src="docs/images/ccget.png" />
 
 ## Cost estimation for using Deep Archive to store data
