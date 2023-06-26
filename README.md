@@ -81,7 +81,7 @@ Above, you can see the storage class is still `DEEP_ARCHIVE`, however, the prese
 
 ## Illustration of archive process
 
-TODO
+<img src="docs/images/ccget.png" />
 
 ## Cost estimation for using Deep Archive to store data
 
