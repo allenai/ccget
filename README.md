@@ -77,7 +77,7 @@ When the restore is completed you can use the same command to see the expiration
 }
 ```
 
-Above, you can see the storage class is still `DEEP_ARCHIVE`, however, the presence of the expiry date indicates the object is available for download.
+Above, you can see the storage class is still `DEEP_ARCHIVE`, however, the presence of the expiry date indicates the object is available for download. Objects that are archived and NOT restored will not have the `Restore` key at all on the response.
 
 ## Illustration of archive process
 
