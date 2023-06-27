@@ -10,9 +10,11 @@ secondary bucket to copy files locally as needed.
 @rauthur
 """
 import argparse
+import csv
 import gzip
 import random
 from dataclasses import dataclass
+from typing import Optional
 
 import boto3
 
@@ -31,14 +33,16 @@ from ccget.shards import list_shards
 
 @dataclass
 class Config:
-    shard_id: str
+    shard_id: Optional[str]
     n: int
     cache_dir: str
     dest_bucket_name: str
     manifest_prefix: str
+    manifest_file: Optional[str]
     reports_prefix: str
     role_arn: str
     storage_class: S3StorageClass
+    ignore_checks: bool
 
 
 def _verify_bucket_region(bucket: str) -> None:
@@ -53,24 +57,46 @@ def _verify_bucket_region(bucket: str) -> None:
         )
 
 
-def _verify_deep_archive_when_all(n: int, storage_class: str):
+def _verify_deep_archive_when_all(n: int, storage_class: str, ignore_checks: bool):
     if n == 0 and storage_class != S3StorageClass.DEEP_ARCHIVE.name:
+        if ignore_checks:
+            print("Ignoring error! Allowing archiving all to non-Deep Archive")
+            return
+
         raise RuntimeError(
             "Cannot archive ALL common crawl files to non-Deep Archive"
             f" storage class {storage_class}"
         )
 
 
-def _verify_deep_archive_when_many(n: int, storage_class: str):
+def _verify_deep_archive_when_many(n: int, storage_class: str, ignore_checks: bool):
     if n > 1000 and storage_class != S3StorageClass.DEEP_ARCHIVE.name:
+        if ignore_checks:
+            print("Ignoring error! Allowing archiving many objects to non-Deep Archive")
+            return
+
         raise RuntimeError("Estimated archive size is over 1 TB to non-Deep Archive!")
 
 
-def _verify_shard(shard: str):
+def _verify_shard_or_manifest_file(shard: str, manifest_file: str):
+    both_specified = shard is not None and manifest_file is not None
+    none_specified = shard is None and manifest_file is None
+
+    if both_specified or none_specified:
+        raise RuntimeError("Specify either shard OR manifest file")
+
+
+def _verify_shard(shard: str, cache_dir: Optional[str]):
+    if shard is None:
+        return
+
     all_shards = set([s.id for s in list_shards()])
 
     if shard not in all_shards:
         raise RuntimeError(f"Unknown shard: {shard}")
+
+    if cache_dir is None:
+        raise RuntimeError("Must provide --cache-dir when specifying shard")
 
 
 def _create_batch_job(s3_manifest_key: str, config: Config) -> str:
@@ -118,10 +144,15 @@ def _create_batch_job(s3_manifest_key: str, config: Config) -> str:
 
 
 def main(config: Config):
-    with gzip.open(warc_paths_local_fn(config.shard_id, config.cache_dir)) as f:
-        keys = [k for k in f.read().decode("utf-8").splitlines()]
+    if config.manifest_file:
+        with open(config.manifest_file, newline="") as c:
+            reader = csv.reader(c)
+            keys = [r[1] for r in reader]
+    else:
+        with gzip.open(warc_paths_local_fn(config.shard_id, config.cache_dir)) as f:
+            keys = [k for k in f.read().decode("utf-8").splitlines()]
 
-    if config.n > 0:
+    if config.n > 0 and config.n < len(keys):
         # Here we will set a seed that is not shared with other RNG states to allow the
         # job suffix to be different while the sampled files are the same
         rng = random.Random(102)
@@ -145,7 +176,7 @@ if __name__ == "__main__":
         "-s",
         "--shard",
         type=str,
-        required=True,
+        required=False,
         help="The shard to archive",
     )
     parser.add_argument(
@@ -157,7 +188,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-c",
         "--cache-dir",
-        required=True,
+        required=False,
         help="Local location of warc.paths.gz files",
     )
     parser.add_argument(
@@ -174,6 +205,13 @@ if __name__ == "__main__":
         required=False,
         default="batch-copy-manifests",
         help="Key prefix in destination bucket for batch job manifest files",
+    )
+    parser.add_argument(
+        "-o",
+        "--manifest-file",
+        type=str,
+        required=False,
+        help="Use a local manifest file instead of generating one",
     )
     parser.add_argument(
         "-r",
@@ -195,13 +233,22 @@ if __name__ == "__main__":
         choices=[c.name for c in list(S3StorageClass)],
         help="Storage class for S3",
     )
+    parser.add_argument(
+        "--ignore-checks",
+        type=bool,
+        action=argparse.BooleanOptionalAction,
+        required=False,
+        default=False,
+        help="Skip checking size to storage class limits (use at your own risk!)",
+    )
 
     args = parser.parse_args()
 
     _verify_bucket_region(args.bucket)
-    _verify_deep_archive_when_all(args.n, args.storage_class)
-    _verify_deep_archive_when_many(args.n, args.storage_class)
-    _verify_shard(args.shard)
+    _verify_deep_archive_when_all(args.n, args.storage_class, args.ignore_checks)
+    _verify_deep_archive_when_many(args.n, args.storage_class, args.ignore_checks)
+    _verify_shard_or_manifest_file(args.shard, args.manifest_file)
+    _verify_shard(args.shard, args.cache_dir)
 
     config = Config(
         shard_id=args.shard,
@@ -209,9 +256,11 @@ if __name__ == "__main__":
         cache_dir=args.cache_dir,
         dest_bucket_name=args.bucket,
         manifest_prefix=args.manifest_prefix,
+        manifest_file=args.manifest_file,
         reports_prefix=args.reports_prefix,
         role_arn=get_role_arn(args.role_name),
         storage_class=S3StorageClass[args.storage_class],
+        ignore_checks=args.ignore_checks,
     )
 
     main(config)
