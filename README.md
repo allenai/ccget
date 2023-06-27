@@ -11,6 +11,8 @@ This repository contains scripts to archive Common Crawl data on S3 to a bucket 
 
 ### Command used to copy C4 data
 
+The `tmp/cache` location is created by `scripts/replicate_warc_paths.py`.
+
 ```bash
 python ./scripts/copy_shard.py \
   -s CC-MAIN-2019-18 \
@@ -24,7 +26,7 @@ python ./scripts/copy_shard.py \
 
 ### Command used to copy CC-NEWS
 
-See section at bottom of the README about generating the manifest file used here.
+The `tmp/cache` location is created by `scripts/replicate_warc_paths.py`. See section at bottom of the README about generating the manifest file (`-o` option) used here.
 
 ```bash
 python ./scripts/copy_shard.py \
