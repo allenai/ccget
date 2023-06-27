@@ -91,7 +91,10 @@ def _restore_estimate(num_keys: int, config: Config):
 
 
 def _verify_shard_or_manifest_file(shard: str, manifest_file: str):
-    if shard is not None and manifest_file is not None:
+    both_specified = shard is not None and manifest_file is not None
+    none_specified = shard is None and manifest_file is None
+
+    if both_specified or none_specified:
         raise RuntimeError("Specify either shard OR manifest file")
 
 

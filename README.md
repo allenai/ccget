@@ -165,6 +165,22 @@ You will also need permission to pass any created role to S3 batch operations:
 
 Replace AWS_ACCOUNT_ID and ROLE_NAME with appropriate values. You will also need permission for `s3:CreateJob`, however, it's likely that you are a power user and already have full access to S3.
 
+## Copy CC-NEWS (use manifest file override)
+
+First, create a text file that includes all of the files that are part of CC-NEWS:
+
+```bash
+aws s3 ls --output text --recursive s3://commoncrawl/crawl-data/CC-NEWS/ > cc-news.txt
+```
+
+Then, capture only the files that are compressed WARC files (.warc.gz):
+
+```bash
+cat cc-news.txt|grep ".warc.gz"|grep -o '[^ ]*$'|xargs -I {} echo "commoncrawl,{}" > cc-news-manifest.csv
+```
+
+Finally, use the `-o` option of `scripts/copy_shard.sh` to use the just created CSV as the input to the batch job.
+
 ## Test Role and Bucket
 
 A test bucket exists within the AllenNLP AWS account: `ai2-russella`. There is also a role with the appropriate permissions that can write and retore to this bucket: `S3BatchOpsRole_CCGET_Test`. Please use these things to test the scripts. But, it's important that a FULL archive is NOT run with the test setup for cost purposes.
