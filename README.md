@@ -2,6 +2,8 @@
 
 This repository contains scripts to archive Common Crawl data on S3 to a bucket on us-east-1 (same region as Common Crawl). Shards are saved to Glacier Deep Archive on S3 (lowest cost storage but with access time and cost penalty). Copy operations are managed with S3's batch operations including object restoration and can all be driven by scripts in this repository.
 
+In the remainder of this README file, `destination-bucket-name` is the name of the bucket we will replicate Common Crawl data to.
+
 ## Summary of scripts
 
 1. `scripts/create_role.py` -- Create a role capable of executing the batch operation jobs. Most likely this role already exists! So, you should not need to run this script, however, it illustrates the permissions assigned to the role.
@@ -9,7 +11,7 @@ This repository contains scripts to archive Common Crawl data on S3 to a bucket 
 1. `scripts/copy_shard.py` -- Creates and submits an S3 batch operations job to copy from Common Crawl's bucket to a private bucket on S3. It is possible to sub-sample a set of shard files to the S3 standard storage class, however, full copies must go to the Deep Archive storage class and this is enforced in the script.
 1. `scripts/restore_shard.py` -- Combines local `warc.paths.gz` files with archived files to pull to standard S3 for a fixed number of days. After time expires files are moved back to Deep Archive. This restoration can take up to 48 hours and MUST go through Bulk restoration mode. Never use Expedited restoration unless it's an emergency as the cost is extremely high.
 
-### Command used to copy C4 data
+### Command used to copy Common Crawl shard used to derive the C4 dataset
 
 The `tmp/cache` location is created by `scripts/replicate_warc_paths.py`.
 
@@ -18,7 +20,7 @@ python ./scripts/copy_shard.py \
   -s CC-MAIN-2019-18 \
   -n 0 \
   -c ./tmp/cache \
-  -b ai2-russella \
+  -b destination-bucket-name \
   --role-name S3BatchOpsRole_CCGET_Test \
   --storage-class INTELLIGENT_TIERING \
   --ignore-checks
@@ -32,7 +34,7 @@ The `tmp/cache` location is created by `scripts/replicate_warc_paths.py`. See se
 python ./scripts/copy_shard.py \
   -n 0 \
   -o ./cc-news-manifest.csv \
-  -b ai2-russella \
+  -b destination-bucket-name \
   --role-name S3BatchOpsRole_CCGET_Test \
   --storage-class INTELLIGENT_TIERING \
   --ignore-checks
@@ -62,7 +64,7 @@ commoncrawl,crawl-data/CC-MAIN-2015-40/segments/1443736677402.41/warc/CC-MAIN-20
 commoncrawl,crawl-data/CC-MAIN-2015-40/segments/1443737958671.93/warc/CC-MAIN-20151001221918-00124-ip-10-137-6-227.ec2.internal.warc.gz,,succeeded,200,,Successful
 ```
 
-This example reports (in many ways) that the specific objects were successfully copied as part of the job. The Job itself specifies the destination bucket (`ai2-russella` in this case) whereas the report shows the source bucket (`commoncrawl`). So, the object key above combined with the destination bucket can be used to retrive or restore (in the case of deep archive) the object.
+This example reports (in many ways) that the specific objects were successfully copied as part of the job. The Job itself specifies the destination bucket (`destination-bucket-name` in this case) whereas the report shows the source bucket (`commoncrawl`). So, the object key above combined with the destination bucket can be used to retrive or restore (in the case of deep archive) the object.
 
 ## Checking the status of an object restoration with the AWS CLI
 
@@ -70,7 +72,7 @@ It can take up to 48 hours to copy an object from deep archive to standard S3 si
 
 ```bash
 aws s3api head-object \
-  --bucket ai2-russella \
+  --bucket destination-bucket-name \
   --key crawl-data/CC-MAIN-2015-40/segments/1443737940789.96/warc/CC-MAIN-20151001221900-00179-ip-10-137-6-227.ec2.internal.warc.gz
 ```
 
@@ -127,7 +129,7 @@ Thus, to store 25 shards for a year and access them once will cost around $40,00
 Issuing a restoration job using `scripts/restore_shard.py` will print an estimate of the cost to both restore the shard files (or the selected subset) and the cost to store the data on S3 standard for the specified number of days. For example:
 
 ```bash
-python ./scripts/restore_shard.py -s CC-MAIN-2015-40 -n 0 -c ./tmp/cache -b ai2-russella -d 7 --role-name S3BatchOpsRole_CCGET_Test
+python ./scripts/restore_shard.py -s CC-MAIN-2015-40 -n 0 -c ./tmp/cache -b destination-bucket-name -d 7 --role-name S3BatchOpsRole_CCGET_Test
 
 This restore job is estimated to cost $181.59
 ...
@@ -146,7 +148,7 @@ This contains the full list of shards in JSON format. Please note that ARC (very
 This CLI command will create a `us-east-1` bucket. Most likely the bucket with Common Crawl data already exists so you should not need to run this!
 
 ```bash
-aws s3api create-bucket --acl private --bucket ai2-russella --object-ownership BucketOwnerEnforced
+aws s3api create-bucket --acl private --bucket destination-bucket-name --object-ownership BucketOwnerEnforced
 ```
 
 Location constraint is not specified as the default is `us-east-1` which is the same region as the Common Crawl data.
@@ -212,10 +214,15 @@ Finally, use the `-o` option of `scripts/copy_shard.sh` to use the just created 
 
 ## Test Role and Bucket
 
-A test bucket exists within the AllenNLP AWS account: `ai2-russella`. There is also a role with the appropriate permissions that can write and retore to this bucket: `S3BatchOpsRole_CCGET_Test`. Please use these things to test the scripts. But, it's important that a FULL archive is NOT run with the test setup for cost purposes.
+A test bucket exists within the AllenNLP AWS account: `destination-bucket-name`. There is also a role with the appropriate permissions that can write and retore to this bucket: `S3BatchOpsRole_CCGET_Test`. Please use these things to test the scripts. But, it's important that a FULL archive is NOT run with the test setup for cost purposes.
 
 ## Restore objects to normal S3 PERMANENTLY
 
 Hopefully you never need to do this! If you do, please make sure that you understand that the cost of storage of petabytes of data on S3 standard is significant. For more information on how to retore and object from Glacier Deep Archive permanently see this [Stack Overflow thread](https://stackoverflow.com/questions/51670231/how-do-i-restore-from-aws-glacier-back-to-s3-permanently).
 
 Relevant to this project, you will use the `restore_shard.py` script to restore the files you want to unarchive permanently then follow the steps in the thread above to make an in-place copy with a new storage class.
+
+
+## Attribution
+
+This package was developed by [Russell Arthur](https://www.linkedin.com/in/rauthur/) while employed at the Allen Institute for AI. Its current maintainers are [Luca Soldaini](https://soldaini.net) and [Kyle Lo](https://kyleclo.github.io).

@@ -6,12 +6,18 @@ build-backend = "setuptools.build_meta"
 name = "ccget"
 authors = [
   {name = "Russell Authur", email = "russell.authur@gmail.com"},
+  {name = "Luca Soldaini", email = "luca@soldaini.net"},
+  {name = "Kyle Lo", email = "kylel@allenai.org"}
+]
+maintainers = [
+  {name = "Luca Soldaini", email = "luca@soldaini.net"},
+  {name = "Kyle Lo", email = "kylel@allenai.org"}
 ]
 description = "Sample and archive Common Crawl data to S3"
 readme = "README.md"
 requires-python = ">=3.9"
 keywords = []
-license = {text = "AI2-Internal"}
+license = {text = "Apache-2.0"}
 classifiers = [
     "Programming Language :: Python :: 3",
 ]
