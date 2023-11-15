@@ -27,6 +27,9 @@ dependencies = [
 ]
 dynamic = ["version"]
 
+[project.urls]
+Homepage = "https://github.com/allenai/ccget"
+
 [tool.setuptools.dynamic]
 version = {file = "VERSION"}
 
