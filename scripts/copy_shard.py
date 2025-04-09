@@ -13,8 +13,10 @@ import argparse
 import csv
 import gzip
 import random
+import re
 from dataclasses import dataclass
 from typing import Optional
+import os
 
 import boto3
 
@@ -31,7 +33,7 @@ from ccget.paths import warc_paths_local_fn
 from ccget.shards import list_shards
 
 
-@dataclass
+@dataclass(frozen=True)
 class Config:
     shard_id: Optional[str]
     n: int
@@ -43,6 +45,7 @@ class Config:
     role_arn: str
     storage_class: S3StorageClass
     ignore_checks: bool
+    contact: str
 
 
 def _verify_bucket_region(bucket: str) -> None:
@@ -88,6 +91,9 @@ def _verify_shard_or_manifest_file(shard: str, manifest_file: str):
 
 def _verify_shard(shard: str, cache_dir: Optional[str]):
     if shard is None:
+        return
+
+    if re.match(r"CC-NEWS/\d{4}/\d{2}", shard):
         return
 
     all_shards = set([s.id for s in list_shards()])
@@ -136,6 +142,8 @@ def _create_batch_job(s3_manifest_key: str, config: Config) -> str:
         },
         Priority=10,  # Higher is more urgent
         RoleArn=config.role_arn,
+        Description=f"Copy shard {config.shard_id} to {config.dest_bucket_name} by {config.contact}",
+        Tags=[{"Key": "Contact", "Value": config.contact}],
     )
 
     print("Created Batch Copy JobId: ", response["JobId"])
@@ -182,13 +190,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "-n",
         type=int,
-        required=True,
+        default=0,
         help="Number of ~1GB WARC files to archive (0 for all). Randomly sampled.",
     )
     parser.add_argument(
         "-c",
         "--cache-dir",
-        required=False,
+        required=True,
         help="Local location of warc.paths.gz files",
     )
     parser.add_argument(
@@ -241,12 +249,20 @@ if __name__ == "__main__":
         default=False,
         help="Skip checking size to storage class limits (use at your own risk!)",
     )
+    parser.add_argument(
+        "--contact",
+        type=str,
+        default=os.environ.get("USER", "") or os.environ.get("USERNAME", ""),
+        help="Contact email for the batch job",
+    )
 
     args = parser.parse_args()
 
+    is_cc_news = "CC-NEWS" in args.shard
+
     _verify_bucket_region(args.bucket)
-    _verify_deep_archive_when_all(args.n, args.storage_class, args.ignore_checks)
-    _verify_deep_archive_when_many(args.n, args.storage_class, args.ignore_checks)
+    _verify_deep_archive_when_all(args.n, args.storage_class, args.ignore_checks or is_cc_news)
+    _verify_deep_archive_when_many(args.n, args.storage_class, args.ignore_checks or is_cc_news)
     _verify_shard_or_manifest_file(args.shard, args.manifest_file)
     _verify_shard(args.shard, args.cache_dir)
 
@@ -261,6 +277,7 @@ if __name__ == "__main__":
         role_arn=get_role_arn(args.role_name),
         storage_class=S3StorageClass[args.storage_class],
         ignore_checks=args.ignore_checks,
+        contact=args.contact,
     )
 
     main(config)

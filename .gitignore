@@ -50,3 +50,9 @@ __pycache__
 
 docs/build
 site/
+
+# uv cache
+uv.lock
+
+# ignore all files in tmp/cache
+tmp/

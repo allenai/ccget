@@ -6,7 +6,7 @@ import tempfile
 from enum import Enum
 
 import boto3
-
+from botocore.exceptions import ClientError
 from ccget.consts import AWS_REGION
 
 
@@ -67,3 +67,27 @@ def create_job_manifest_on_s3(
         s3.upload_file(manifest_fullpath, dest_bucket_name, s3_manifest_key)
 
         return s3_manifest_key
+
+
+def check_s3_object_exists(bucket_name: str, object_key: str, s3_client=None) -> bool:
+    """
+    Check if an object exists in an S3 bucket
+
+    :param bucket_name: String name of the bucket
+    :param object_key: String key of the object
+    :return: True if object exists, False if not
+    """
+    s3_client = s3_client or boto3.client('s3')
+
+    try:
+        # Use head_object which only retrieves metadata and is more efficient
+        # than trying to download the object
+        s3_client.head_object(Bucket=bucket_name, Key=object_key)
+        return True
+    except ClientError as e:
+        # If error code is 404, the object does not exist
+        if e.response['Error']['Code'] == '404':
+            return False
+        # For any other error, raise it
+        else:
+            raise

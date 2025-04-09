@@ -22,9 +22,11 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 dependencies = [
-    "boto3",
     "requests",
-]
+    "boto3>=1.26.0",
+    "smart-open>=6.0.0",
+    "python-dateutil>=2.8.2",
+    ]
 dynamic = ["version"]
 
 [project.urls]
